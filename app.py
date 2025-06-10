@@ -2,10 +2,12 @@ from flask import Flask, request, jsonify
 import json
 import time
 import os
+import uuid
 
 app = Flask(__name__)
 KEYS_FILE = 'keys.json'
 
+# Load keys from file
 def load_keys():
     if not os.path.exists(KEYS_FILE):
         return []
@@ -15,23 +17,25 @@ def load_keys():
         except json.JSONDecodeError:
             return []
 
+# Save keys to file
 def save_keys(keys):
     with open(KEYS_FILE, 'w') as f:
         json.dump(keys, f, indent=2)
 
+# GET /getkey — Generate new serial key
 @app.route('/getkey', methods=['GET'])
 def get_key():
-    import uuid
     keys = load_keys()
     new_key = {
         "serial": str(uuid.uuid4()).upper(),
-        "expires_at": time.time() + (60 * 60 * 24 * 30),  # 30 days from now
+        "expires_at": time.time() + (60 * 60 * 24 * 30),  # 30 days
         "device_id": None
     }
     keys.append(new_key)
     save_keys(keys)
     return jsonify(new_key)
 
+# POST /verify — Verify serial + device
 @app.route('/verify', methods=['POST'])
 def verify_key():
     data = request.get_json()
@@ -46,15 +50,31 @@ def verify_key():
         if key["serial"] == serial:
             if time.time() > key["expires_at"]:
                 return jsonify({"success": False, "message": "Serial expired"}), 403
+
             if key["device_id"] is None:
                 key["device_id"] = device_id
                 save_keys(keys)
-                return jsonify({"success": True, "message": "Serial activated for this device"})
+                return jsonify({
+                    "success": True,
+                    "message": "Serial activated for this device",
+                    "expires_at": key["expires_at"]
+                })
+
             elif key["device_id"] == device_id:
-                return jsonify({"success": True, "message": "Serial valid for this device"})
+                return jsonify({
+                    "success": True,
+                    "message": "Serial valid for this device",
+                    "expires_at": key["expires_at"]
+                })
+
             else:
-                return jsonify({"success": False, "message": "Serial already used on another device"}), 403
+                return jsonify({
+                    "success": False,
+                    "message": "Serial already used on another device"
+                }), 403
+
     return jsonify({"success": False, "message": "Invalid serial"}), 404
 
+# Run server
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3000)
