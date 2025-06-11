@@ -7,7 +7,6 @@ import uuid
 app = Flask(__name__)
 KEYS_FILE = 'keys.json'
 
-# Load keys from file
 def load_keys():
     if not os.path.exists(KEYS_FILE):
         return []
@@ -17,12 +16,10 @@ def load_keys():
         except json.JSONDecodeError:
             return []
 
-# Save keys to file
 def save_keys(keys):
     with open(KEYS_FILE, 'w') as f:
         json.dump(keys, f, indent=2)
 
-# GET /getkey — Generate new serial key
 @app.route('/getkey', methods=['GET'])
 def get_key():
     keys = load_keys()
@@ -35,7 +32,6 @@ def get_key():
     save_keys(keys)
     return jsonify(new_key)
 
-# POST /verify — Verify serial + device
 @app.route('/verify', methods=['POST'])
 def verify_key():
     data = request.get_json()
@@ -48,9 +44,6 @@ def verify_key():
     keys = load_keys()
     for key in keys:
         if key["serial"] == serial:
-            if time.time() > key["expires_at"]:
-                return jsonify({"success": False, "message": "Serial expired"}), 403
-
             if key["device_id"] is None:
                 key["device_id"] = device_id
                 save_keys(keys)
@@ -59,22 +52,34 @@ def verify_key():
                     "message": "Serial activated for this device",
                     "expires_at": key["expires_at"]
                 })
-
             elif key["device_id"] == device_id:
                 return jsonify({
                     "success": True,
                     "message": "Serial valid for this device",
                     "expires_at": key["expires_at"]
                 })
-
             else:
                 return jsonify({
                     "success": False,
                     "message": "Serial already used on another device"
                 }), 403
-
     return jsonify({"success": False, "message": "Invalid serial"}), 404
 
-# Run server
+@app.route('/delete', methods=['POST'])
+def delete_key():
+    data = request.get_json()
+    serial = data.get('serial')
+    
+    if not serial:
+        return jsonify({"success": False, "message": "Missing serial"}), 400
+        
+    keys = load_keys()
+    new_keys = [k for k in keys if k["serial"] != serial]
+    
+    if len(new_keys) != len(keys):
+        save_keys(new_keys)
+        return jsonify({"success": True, "message": "Serial deleted"})
+    return jsonify({"success": False, "message": "Serial not found"}), 404
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3000)
